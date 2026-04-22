@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+#
+# heptabase-link — append a live card-link between two Heptabase note cards.
+#
+# Default is bidirectional: A gets a paragraph linking to B, B gets a paragraph linking to A.
+# Uses `note read` + jq to merge (not clobber) existing content, and passes contentMd5
+# for conflict detection on save.
+#
+# Usage:
+#   heptabase-link <card-id-a> <card-id-b> [--label TEXT] [--one-way]
+#
+# Options:
+#   --label TEXT   Text prepended before the card pill (default: "See also")
+#   --one-way      Only link A -> B; skip the reverse link.
+#   -h, --help     Show this help.
+
+set -euo pipefail
+
+usage() {
+  sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'
+  exit "${1:-0}"
+}
+
+command -v jq >/dev/null || { echo "error: jq is required" >&2; exit 1; }
+command -v heptabase >/dev/null || { echo "error: heptabase CLI not found in PATH" >&2; exit 1; }
+
+label_text="See also"
+one_way=false
+positional=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --label) label_text="$2"; shift 2 ;;
+    --one-way) one_way=true; shift ;;
+    -h|--help) usage 0 ;;
+    --) shift; positional+=("$@"); break ;;
+    -*) echo "error: unknown flag $1" >&2; usage 1 ;;
+    *) positional+=("$1"); shift ;;
+  esac
+done
+
+[[ ${#positional[@]} -eq 2 ]] || { echo "error: need exactly two card ids" >&2; usage 1; }
+
+card_a="${positional[0]}"
+card_b="${positional[1]}"
+
+link_one() {
+  local src="$1" tgt="$2"
+
+  # 1. read current content + md5
+  local read_json content md5
+  read_json=$(heptabase note read "$src")
+  content=$(jq -r '.content' <<<"$read_json")
+  md5=$(jq -r '.contentMd5' <<<"$read_json")
+
+  # guard: don't double-link
+  if jq -e --arg tgt "$tgt" '
+        [.. | objects? | select(.type == "card" and .attrs.cardId == $tgt)] | length > 0
+      ' <<<"$content" >/dev/null; then
+    echo "skip: $src already links to $tgt"
+    return 0
+  fi
+
+  # 2. merge: append a new paragraph with a text prefix + card node
+  local new_content
+  new_content=$(jq \
+    --arg label "${label_text}: " \
+    --arg tgt "$tgt" \
+    '.content += [{
+        "type": "paragraph",
+        "content": [
+          { "type": "text", "text": $label },
+          { "type": "card", "attrs": { "cardId": $tgt } }
+        ]
+      }]' <<<"$content")
+
+  # 3. save
+  local tmp
+  tmp=$(mktemp)
+  # shellcheck disable=SC2064
+  trap "rm -f '$tmp'" RETURN
+  printf '%s' "$new_content" >"$tmp"
+  heptabase note save "$src" --content-md5 "$md5" -f "$tmp" >/dev/null
+
+  # 4. verify the card node actually landed
+  local verify
+  verify=$(heptabase note read "$src" | jq -r '.content')
+  if jq -e --arg tgt "$tgt" '
+        [.. | objects? | select(.type == "card" and .attrs.cardId == $tgt)] | length > 0
+      ' <<<"$verify" >/dev/null; then
+    echo "ok:   $src -> $tgt"
+  else
+    echo "fail: saved but card node not found for $src -> $tgt" >&2
+    return 1
+  fi
+}
+
+link_one "$card_a" "$card_b"
+if [[ "$one_way" != "true" ]]; then
+  link_one "$card_b" "$card_a"
+fi
