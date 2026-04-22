@@ -46,12 +46,26 @@ card_b="${positional[1]}"
 
 link_one() {
   local src="$1" tgt="$2"
+  local date_re='^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
 
-  # Pick the right subcommand based on ID shape:
+  # Pick the right subcommand based on src shape:
   #   YYYY-MM-DD → journal
   #   otherwise  → note
   local src_cmd="note"
-  [[ "$src" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && src_cmd="journal"
+  [[ "$src" =~ $date_re ]] && src_cmd="journal"
+
+  # Pick the right node schema for tgt:
+  #   YYYY-MM-DD → {type:"date", attrs:{date:"..."}}       (references a journal)
+  #   otherwise  → {type:"card", attrs:{cardId:"<uuid>"}}  (references a note/pdf/etc.)
+  # Internal links to journals use a different node type than links to cards.
+  local tgt_node_type tgt_attr_key
+  if [[ "$tgt" =~ $date_re ]]; then
+    tgt_node_type="date"
+    tgt_attr_key="date"
+  else
+    tgt_node_type="card"
+    tgt_attr_key="cardId"
+  fi
 
   # 1. read current content + md5
   local read_json content md5
@@ -59,24 +73,29 @@ link_one() {
   content=$(jq -r '.content' <<<"$read_json")
   md5=$(jq -r '.contentMd5' <<<"$read_json")
 
-  # guard: don't double-link
-  if jq -e --arg tgt "$tgt" '
-        [.. | objects? | select(.type == "card" and .attrs.cardId == $tgt)] | length > 0
+  # guard: don't double-link (look for a node of the right shape pointing at tgt)
+  if jq -e \
+      --arg tgt "$tgt" \
+      --arg ntype "$tgt_node_type" \
+      --arg nkey "$tgt_attr_key" '
+        [.. | objects? | select(.type == $ntype and (.attrs[$nkey] // "") == $tgt)] | length > 0
       ' <<<"$content" >/dev/null; then
     echo "skip: $src already links to $tgt"
     return 0
   fi
 
-  # 2. merge: append a new paragraph with a text prefix + card node
+  # 2. merge: append a new paragraph with a text prefix + link node
   local new_content
   new_content=$(jq \
     --arg label "${label_text}: " \
     --arg tgt "$tgt" \
+    --arg ntype "$tgt_node_type" \
+    --arg nkey "$tgt_attr_key" \
     '.content += [{
         "type": "paragraph",
         "content": [
           { "type": "text", "text": $label },
-          { "type": "card", "attrs": { "cardId": $tgt } }
+          { "type": $ntype, "attrs": ({} | .[$nkey] = $tgt) }
         ]
       }]' <<<"$content")
 
@@ -88,15 +107,18 @@ link_one() {
   printf '%s' "$new_content" >"$tmp"
   heptabase "$src_cmd" save "$src" --content-md5 "$md5" -f "$tmp" >/dev/null
 
-  # 4. verify the card node actually landed
+  # 4. verify the link node actually landed
   local verify
   verify=$(heptabase "$src_cmd" read "$src" | jq -r '.content')
-  if jq -e --arg tgt "$tgt" '
-        [.. | objects? | select(.type == "card" and .attrs.cardId == $tgt)] | length > 0
+  if jq -e \
+      --arg tgt "$tgt" \
+      --arg ntype "$tgt_node_type" \
+      --arg nkey "$tgt_attr_key" '
+        [.. | objects? | select(.type == $ntype and (.attrs[$nkey] // "") == $tgt)] | length > 0
       ' <<<"$verify" >/dev/null; then
     echo "ok:   $src -> $tgt"
   else
-    echo "fail: saved but card node not found for $src -> $tgt" >&2
+    echo "fail: saved but link node not found for $src -> $tgt" >&2
     return 1
   fi
 }

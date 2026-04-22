@@ -9,26 +9,41 @@ description: "Create real cross-links between Heptabase cards via the heptabase 
 
 **Markdown append does NOT create real cross-links in Heptabase.** Wiki-link syntax like `[[Card Title]]` written through `heptabase note create` or `heptabase note append` is stored as literal text inside a `text` node — it renders in the card as the plain string `[[Card Title]]`, not as a clickable link.
 
-Real internal card links are a dedicated ProseMirror **node type** (not a mark). The only way to create them via the CLI is `heptabase note save` with explicit ProseMirror JSON.
+Real internal links are dedicated ProseMirror **node types** (not marks). The only way to create them via the CLI is `heptabase note save` (or `journal save`) with explicit ProseMirror JSON.
 
-## The card-link node schema
+## Two link schemas: pick the right one for your target
 
-Internal cross-links use this node:
+Heptabase uses **different node types** depending on whether you're linking to a card (note, pdf, highlight, etc.) or to a journal. Getting this wrong produces a pill that renders as "Invalid card" in the UI.
+
+### Linking to a card (note, pdf, highlight, etc.)
 
 ```json
 { "type": "card", "attrs": { "cardId": "<target-card-uuid>" } }
 ```
 
-Key properties:
+- `cardId` is the target's UUID
+- Works for any non-journal object type
 
-- **Node, not mark.** `link` (external URL) is a mark that wraps text. `card` is a standalone inline node — it sits inside a paragraph alongside text nodes, no wrapped content.
-- **Inline level.** It must live inside a block node like `paragraph`. Do not put it at the top level of the `doc`.
-- **Single attribute `cardId`.** The target card's UUID. No title, no label — Heptabase resolves the display text from the target card's current title at render time.
+### Linking to a journal
+
+```json
+{ "type": "date", "attrs": { "date": "2026-03-12" } }
+```
+
+- It's a `date` node, **not** a `card` node
+- The attribute is `date` (the YYYY-MM-DD string), **not** `cardId`
+- Using `{type:"card", attrs:{cardId:"2026-03-12"}}` saves without error but renders as "Invalid card"
+
+### Common properties
+
+- **Both are nodes, not marks.** `link` (external URL) is a mark that wraps text. `card` and `date` are standalone inline nodes — they sit inside a paragraph alongside text nodes, no wrapped content.
+- **Inline level.** They must live inside a block node like `paragraph`. Do not put them at the top level of the `doc`.
+- **No label.** Heptabase resolves the display text from the target's current title (for cards) or date (for journals) at render time.
 - **Not to be confused with external links.** External URLs are a `link` mark on a `text` node:
   ```json
   { "type": "text", "marks": [{ "type": "link", "attrs": { "href": "https://…", "data-internal-href": null } }], "text": "…" }
   ```
-  The `data-internal-href: null` field is a telltale that external and internal links share a schema lineage, but **do not** try to create internal links by setting `data-internal-href` — internal links go through the `card` node instead.
+  The `data-internal-href: null` field is a telltale that external and internal links share a schema lineage, but **do not** try to create internal links by setting `data-internal-href` — internal links go through the `card` or `date` nodes instead.
 
 ## Minimum working example
 
@@ -166,8 +181,10 @@ In the desktop app, refresh the card; the link should render as a clickable card
 3. **Cross-links are by ID, not title.** If you rename a target card, existing links keep working (they store the UUID). But this also means you cannot pre-create a link to a card that does not yet exist — the `cardId` must be real.
 4. **No dangling links.** The CLI does not verify the `cardId` exists at save time in a way that surfaces nicely — if you save a bogus UUID, the card node persists but renders as a broken link. Always read the target card first to confirm its ID.
 5. **External URL links are a different mechanism.** Those are `link` marks on text. Do not mix them up.
-6. **Other card types (pdf, journal, highlightElement, etc.) likely use the same `card` node schema** for linking into them, since the `cardId` field is type-agnostic — but this has only been verified for note→note links. Test before assuming.
-7. **`note save` replaces everything.** It is not additive. If you forget to include existing paragraphs in your new JSON, they are gone.
+6. **Journals use a different node type.** Links to journals are `{type:"date", attrs:{date:"..."}}`, not `{type:"card", attrs:{cardId:"..."}}`. A card-node with a date string in `cardId` saves without error but renders as "Invalid card" in the UI. Verify by opening the UI, not just reading the JSON.
+7. **Other card types (pdf, highlightElement, etc.)** likely use the same `card` node schema since the `cardId` field is type-agnostic for card-like objects — but this has only been verified for note→note links. Test before assuming.
+8. **`note save` / `journal save` replace everything.** They are not additive. If you forget to include existing paragraphs in your new JSON, they are gone.
+9. **Verify renders in the UI, not just the JSON.** A link node can be structurally correct (matches the schema) yet point at something that doesn't exist or uses the wrong node type — and still round-trip through `save` + `read` cleanly. The only ground truth is opening the card in the Heptabase desktop app.
 
 ## How this schema was discovered
 
@@ -178,4 +195,12 @@ In case you need to rediscover schemas for other node types (embeds, mentions, b
 3. Look for unfamiliar `"type":"..."` values in the ProseMirror JSON `content` field.
 4. External URL links appear as `{"type":"text","marks":[{"type":"link","attrs":{"href":"...","data-internal-href":null,...}}],"text":"..."}`.
 5. Internal card links appear as `{"type":"card","attrs":{"cardId":"..."}}`.
-6. Other features (embeds, images, etc.) likely follow the same node-vs-mark pattern: standalone visual elements are nodes; text styling/attribution is marks.
+6. Journal links appear as `{"type":"date","attrs":{"date":"YYYY-MM-DD"}}`.
+7. To enumerate every node type in use, sample ~50 notes and journals and collect distinct `.type` values — then inspect each unfamiliar type for its schema:
+   ```bash
+   for cid in $(heptabase card list --card-types note -l 60 | jq -r '.results[].id'); do
+     heptabase note read "$cid" | jq -r '.content // empty' \
+       | jq -r '[.. | objects? | .type // empty] | unique | .[]'
+   done | sort -u
+   ```
+8. Other features (embeds, images, etc.) likely follow the same node-vs-mark pattern: standalone visual elements are nodes; text styling/attribution is marks.
