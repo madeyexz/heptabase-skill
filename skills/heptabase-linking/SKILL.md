@@ -87,6 +87,51 @@ Wrapped in a full doc:
 
 You do NOT need to provide `attrs.id` on headings/paragraphs on save — Heptabase will generate those UUIDs for you. Compare before/after with `note read` to confirm.
 
+## Two placement styles: trailing vs inline
+
+Where you put the link inside the paragraph matters for readability.
+
+### Trailing ("See also: <link>")
+
+Good default. Append a new paragraph at the bottom whose whole purpose is the link:
+
+```json
+{
+  "type": "paragraph",
+  "content": [
+    { "type": "text", "text": "See also: " },
+    { "type": "card", "attrs": { "cardId": "<uuid>" } }
+  ]
+}
+```
+
+Use when the link is a pointer, not a part of the prose — e.g. "related cards" at the bottom of a note, or an auto-appended backlink. The included `heptabase-link` script uses this style by default.
+
+### Inline (link embedded in a sentence or list item)
+
+Use when the link IS the subject of the sentence — typical for timeline entries, mentions, or anywhere the date/card is part of the flow:
+
+```json
+{
+  "type": "bullet_list_item",
+  "attrs": { "folded": false, "format": null },
+  "content": [
+    { "type": "paragraph", "content": [
+      { "type": "date", "attrs": { "date": "2026-03-30" } },
+      { "type": "text", "text": " — met in SF; detailed conversation about his role change." }
+    ]}
+  ]
+}
+```
+
+Renders as:
+
+> • *[Mar 30, 2026]* — met in SF; detailed conversation about his role change.
+
+The `date` or `card` node can appear anywhere inside the paragraph's `content` array, alongside `text` nodes. Prepend, interleave, whatever reads naturally.
+
+The rule: both `card` and `date` are **inline** nodes. They need to live inside a `paragraph` (or an item whose content is a paragraph, like `bullet_list_item`). They can sit at the start, middle, or end of that paragraph freely.
+
 ## End-to-end workflow: cross-link two new cards
 
 The clean recipe. Each step is explicit about why.
@@ -185,6 +230,90 @@ In the desktop app, refresh the card; the link should render as a clickable card
 7. **Other card types (pdf, highlightElement, etc.)** likely use the same `card` node schema since the `cardId` field is type-agnostic for card-like objects — but this has only been verified for note→note links. Test before assuming.
 8. **`note save` / `journal save` replace everything.** They are not additive. If you forget to include existing paragraphs in your new JSON, they are gone.
 9. **Verify renders in the UI, not just the JSON.** A link node can be structurally correct (matches the schema) yet point at something that doesn't exist or uses the wrong node type — and still round-trip through `save` + `read` cleanly. The only ground truth is opening the card in the Heptabase desktop app.
+
+## Batch-linking recipe: build a cross-linked graph from many sources
+
+When you need to link many cards to many targets at once (e.g. "I met 40 people; create a card for each and link to every journal that mentions them"), the pattern is:
+
+### 1. Extract candidates from source content
+
+Read the source cards (journals or otherwise) into plain text with jq — walk the ProseMirror tree and concatenate all `text` nodes:
+
+```bash
+for d in $(seq 0 90 | xargs -I{} date -j -v-{}d -f %Y-%m-%d "$(date +%Y-%m-%d)" +%Y-%m-%d); do
+  txt=$(heptabase journal read "$d" 2>/dev/null \
+    | jq -r '.content | fromjson | [.. | objects? | select(.type=="text") | .text] | join(" ")')
+  [[ -n "$txt" && "$txt" != "null" ]] && printf "=== %s ===\n%s\n\n" "$d" "$txt"
+done > /tmp/source-text.txt
+```
+
+### 2. Scope with the user before creating
+
+Present a candidate list and ask which rows to include, which to skip, and how to resolve ambiguities (same-name disambiguation, "is this pre-existing?", etc.). Creating 40 cards then having to undo is more painful than one scoping round-trip.
+
+### 3. Create cards in bulk, capture UUIDs
+
+Write one markdown file per target into a staging directory, then loop:
+
+```bash
+: >/tmp/ids.tsv
+for f in /tmp/staging/*.md; do
+  slug="$(basename "$f" .md)"
+  id=$(heptabase note create -f "$f" | jq -r '.id')
+  printf "%s\t%s\n" "$slug" "$id" >>/tmp/ids.tsv
+done
+```
+
+Persist the `slug → uuid` mapping to disk. You'll need it for the next two phases.
+
+### 4. Tag in bulk
+
+```bash
+while IFS=$'\t' read -r slug id; do
+  heptabase tag add --card-id "$id" --tag-name people
+done </tmp/ids.tsv
+```
+
+Note: `heptabase tag add` uses `--tag-name`, not `--tag-id`. It creates the tag if it doesn't exist.
+
+### 5. Link in bulk with `heptabase-link`
+
+Join your UUID map with a `slug → space-separated mention-dates` map, then loop:
+
+```bash
+join -t $'\t' -1 1 -2 1 \
+  <(sort /tmp/ids.tsv) <(sort /tmp/mentions.tsv) > /tmp/joined.tsv
+
+while IFS=$'\t' read -r slug pid dates; do
+  read -r -a date_arr <<<"$dates"        # bash only; see shell gotchas below
+  for d in "${date_arr[@]}"; do
+    heptabase-link "$pid" "$d" --label "Journal"
+  done
+done </tmp/joined.tsv
+```
+
+### 6. Verify a representative sample in the UI
+
+Pick 2–3 cards with multiple links and confirm they render as real pills, not "Invalid card". This is cheap insurance against a schema mismatch affecting all the cards.
+
+## Shell gotchas when batch-linking
+
+Time-savers learned the hard way:
+
+1. **`IFS=$'\t'` from an outer `read` contaminates inner loops.** If you do `while IFS=$'\t' read -r a b c; do for x in $c; done`, the `for` loop will treat the whole string `$c` as a single token, because IFS is still tab. Either word-split explicitly with `read -r -a arr <<<"$c"`, or reset IFS inside the inner block.
+
+2. **macOS default shell is zsh, not bash.** `read -a` is bash-only; zsh uses `read -A` (capital A). Associative arrays (`declare -A`) only work in bash 4+, and macOS ships bash 3.2. Safest fix: run the whole batch loop under `bash -c '...'` instead of the interactive shell. If you see `bad option: -a`, you're in zsh.
+
+3. **The script's idempotency guard only catches one direction.** `heptabase-link A B` prints `ok: A -> B` as soon as the first save succeeds — even if the reverse-direction save (B -> A) then fails. `set -e` inside the script stops further work, but the wrapper loop sees only the first `ok:` line and moves on. Consequence: a partial batch can leave one-sided links. Mitigation: if you see any failure, re-read both endpoints and verify both links exist.
+
+4. **A bogus `tgt` still produces a saved (broken) link node.** If `$tgt` was a space-separated garbage string rather than a single id, the script happily writes `{type:"card", attrs:{cardId:"2026-03-30 2026-03-31 ..."}}` into the source card's content. To find these after the fact, grep for card nodes whose `cardId` is neither a valid UUID nor a valid date:
+
+    ```bash
+    heptabase note read <pid> | jq -r '.content' | jq '
+      [.. | objects? | select(.type == "card") | .attrs.cardId
+        | select(test("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$") | not)
+        | select(test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$") | not)]'
+    ```
 
 ## How this schema was discovered
 
