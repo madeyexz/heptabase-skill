@@ -6,6 +6,12 @@ If you type `[[Card Title]]` into a card through the CLI, Heptabase shows it as 
 
 This repo is a [skills.sh](https://skills.sh) skill — the layout follows the standard `skills/<name>/SKILL.md` convention.
 
+## Install
+
+```bash
+npx skills add madeyexz/heptabase-skill
+```
+
 ## Files
 
 | Path | What it is |
