@@ -47,9 +47,15 @@ card_b="${positional[1]}"
 link_one() {
   local src="$1" tgt="$2"
 
+  # Pick the right subcommand based on ID shape:
+  #   YYYY-MM-DD → journal
+  #   otherwise  → note
+  local src_cmd="note"
+  [[ "$src" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && src_cmd="journal"
+
   # 1. read current content + md5
   local read_json content md5
-  read_json=$(heptabase note read "$src")
+  read_json=$(heptabase "$src_cmd" read "$src")
   content=$(jq -r '.content' <<<"$read_json")
   md5=$(jq -r '.contentMd5' <<<"$read_json")
 
@@ -80,11 +86,11 @@ link_one() {
   # shellcheck disable=SC2064
   trap "rm -f '$tmp'" RETURN
   printf '%s' "$new_content" >"$tmp"
-  heptabase note save "$src" --content-md5 "$md5" -f "$tmp" >/dev/null
+  heptabase "$src_cmd" save "$src" --content-md5 "$md5" -f "$tmp" >/dev/null
 
   # 4. verify the card node actually landed
   local verify
-  verify=$(heptabase note read "$src" | jq -r '.content')
+  verify=$(heptabase "$src_cmd" read "$src" | jq -r '.content')
   if jq -e --arg tgt "$tgt" '
         [.. | objects? | select(.type == "card" and .attrs.cardId == $tgt)] | length > 0
       ' <<<"$verify" >/dev/null; then
