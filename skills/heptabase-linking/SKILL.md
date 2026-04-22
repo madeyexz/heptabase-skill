@@ -1,6 +1,6 @@
 ---
 name: heptabase-linking
-description: Create real cross-links between Heptabase cards via the CLI. Required whenever you need inter-card references to render as clickable card pills in the UI, not as literal `[[...]]` text.
+description: "Create real cross-links between Heptabase cards via the heptabase CLI. Use when the user wants to link Heptabase cards, cross-reference notes, build a card graph, or fix existing `[[Card Title]]` wiki-link text that is rendering as plain text instead of a clickable card pill. Real links require a ProseMirror `card` node written through `heptabase note save`; markdown paths (`note create`, `note append`) cannot create them. Triggers on: heptabase link cards, cross-link heptabase, heptabase cross-reference, heptabase cardId node, heptabase note save, heptabase prosemirror link, heptabase wiki link not working."
 ---
 
 # Heptabase card cross-linking via CLI
