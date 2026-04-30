@@ -1,0 +1,28 @@
+name: Validate skill and marketplace
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Validate heptabase-linking skill
+        run: npx --yes skills-ref validate ./skills/heptabase-linking
+
+      - name: Validate heptabase-cli skill
+        run: npx --yes skills-ref validate ./skills/heptabase-cli
+
+      - name: Install Claude Code CLI
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Validate marketplace manifest
+        run: claude plugin validate .

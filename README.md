@@ -2,9 +2,9 @@
 
 Tools for linking [Heptabase](https://heptabase.com) cards together using the `heptabase` command line.
 
-If you type `[[Card Title]]` into a card through the CLI, Heptabase shows it as plain text — not a clickable link. Making a real link needs a specific piece of JSON. This repo explains what that is, and gives you a script that does it for you.
+This repo extends the official [heptameta/heptabase-cli-skills](https://github.com/heptameta/heptabase-cli-skills) plugin (MIT) with a focused skill for **card cross-linking**. Heptabase's `[[Card Title]]` wiki-link syntax doesn't actually create real links when written through the CLI — it stores plain text. Real links require a specific ProseMirror JSON node. This repo documents that schema and ships a script that does it for you.
 
-This repo is a [skills.sh](https://skills.sh) skill — the layout follows the standard `skills/<name>/SKILL.md` convention.
+It bundles the upstream `heptabase-cli` skill verbatim, so installing this plugin gives you both general CLI usage and the cross-linking extension in one place. The layout follows the [skills.sh](https://skills.sh) `skills/<name>/SKILL.md` convention.
 
 ## Install
 
@@ -12,12 +12,14 @@ This repo is a [skills.sh](https://skills.sh) skill — the layout follows the s
 npx skills add madeyexz/heptabase-skill
 ```
 
-## Files
+## Skills
 
-| Path | What it is |
+This repo bundles two skills:
+
+| Skill | What it covers |
 |---|---|
-| [`skills/heptabase-linking/SKILL.md`](./skills/heptabase-linking/SKILL.md) | The skill itself. Notes on how Heptabase stores card links, step-by-step instructions for making one from the command line, and the mistakes to avoid. Read this first. |
-| [`skills/heptabase-linking/bin/heptabase-link`](./skills/heptabase-linking/bin/heptabase-link) | A script that links two cards for you. Runs both ways by default. Safe to run twice — it won't add duplicates. |
+| [`skills/heptabase-cli`](./skills/heptabase-cli/SKILL.md) | General Heptabase CLI usage — command discovery, common recipes, JSON output, troubleshooting, known limitations. Copied from [heptameta/heptabase-cli-skills](https://github.com/heptameta/heptabase-cli-skills) (MIT). |
+| [`skills/heptabase-linking`](./skills/heptabase-linking/SKILL.md) | The specific ProseMirror schema for cross-linking cards — what wiki-link syntax can't do, the `card`/`date` node types, and end-to-end recipes. Ships [`bin/heptabase-link`](./skills/heptabase-linking/bin/heptabase-link), a script that links two cards both ways and is safe to re-run. |
 
 ## Quickstart
 

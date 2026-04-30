@@ -1,0 +1,16 @@
+{
+  "name": "heptabase-skill",
+  "owner": {
+    "name": "Ian Hsiao"
+  },
+  "metadata": {
+    "description": "Heptabase CLI skills: general CLI usage and card cross-linking"
+  },
+  "plugins": [
+    {
+      "name": "heptabase-linking",
+      "source": "./",
+      "description": "Heptabase CLI skills: general CLI usage and card cross-linking"
+    }
+  ]
+}

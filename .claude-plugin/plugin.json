@@ -1,0 +1,20 @@
+{
+  "name": "heptabase-linking",
+  "version": "0.2.0",
+  "description": "Skills for working with Heptabase via the CLI. Bundles a general CLI skill (notes, journals, tags, cards, AI Tutor) and a focused cross-linking skill that explains the ProseMirror card/date node schema and ships a helper script.",
+  "author": {
+    "name": "Ian Hsiao"
+  },
+  "repository": "https://github.com/madeyexz/heptabase-skill",
+  "license": "MIT",
+  "keywords": [
+    "heptabase",
+    "knowledge-management",
+    "pkm",
+    "note-taking",
+    "links",
+    "cross-reference",
+    "backlinks",
+    "prosemirror"
+  ]
+}
