@@ -8,9 +8,30 @@ It bundles the upstream `heptabase-cli` skill verbatim, so installing this plugi
 
 ## Install
 
-```bash
+### Claude Code (Marketplace)
+
+```
+/plugin marketplace add madeyexz/heptabase-skill
+/plugin install heptabase-linking@heptabase-skill
+```
+
+### npx skills
+
+```
 npx skills add madeyexz/heptabase-skill
 ```
+
+## Update
+
+For Claude Code marketplace installs:
+
+```
+/plugin marketplace update heptabase-skill
+/plugin update heptabase-linking@heptabase-skill
+/reload-plugins
+```
+
+For `npx skills` installs, rerun the install command.
 
 ## Skills
 
