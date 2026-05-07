@@ -4,13 +4,13 @@
     "name": "Ian Hsiao"
   },
   "metadata": {
-    "description": "Heptabase CLI skills: general CLI usage and card cross-linking"
+    "description": "Heptabase CLI skills: general CLI usage, whiteboards, and card cross-linking"
   },
   "plugins": [
     {
       "name": "heptabase-linking",
       "source": "./",
-      "description": "Heptabase CLI skills: general CLI usage and card cross-linking"
+      "description": "Heptabase CLI skills: general CLI usage, whiteboards, and card cross-linking"
     }
   ]
 }
